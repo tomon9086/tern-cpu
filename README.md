@@ -59,7 +59,7 @@ println!("{} {:?} {}", -a, a.sign(), a << 1);
 ## ディレクトリ
 
 ```
-docs/        仕様(balanced-ternary.md, 今後 isa.md, gates.md)と設計判断(decisions/)
+docs/        仕様(balanced-ternary.md, isa.md, glossary.md, 今後 gates.md)と設計判断(decisions/)
 emu/         エミュレータ(Cargo パッケージ。src/: trit / cpu / asm / bin/t3run、tests/)
 programs/    サンプルプログラム(sum3x5, countdown, multiply)
 spice/       SPICE ネットリスト(M4〜)
