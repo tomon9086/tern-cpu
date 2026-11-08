@@ -1,0 +1,36 @@
+; result = a * b(b は負でもよい)。BR3 で b の符号に応じて足すか引くかを選ぶ
+        LDI  0
+        STA  result
+        LDA  a
+        NEG
+        STA  nega        ; nega = -a
+loop:   LDA  b
+        BR3  table
+        JMP  neg_b       ; b < 0
+table:  JMP  done        ; b = 0
+        JMP  pos_b       ; b > 0
+
+pos_b:  ADD  minus1      ; b -= 1
+        STA  b
+        LDA  result
+        ADD  a           ; result += a
+        STA  result
+        JMP  loop
+
+neg_b:  ADD  plus1       ; b += 1
+        STA  b
+        LDA  result
+        ADD  nega        ; result -= a
+        STA  result
+        JMP  loop
+
+done:   LDA  result
+        OUT
+        HALT
+
+a:      .word 7
+b:      .word -12
+result: .word 0
+nega:   .word 0
+plus1:  .word 1
+minus1: .word -1

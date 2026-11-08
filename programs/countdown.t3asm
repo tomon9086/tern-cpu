@@ -1,0 +1,11 @@
+; 5 から 1 までカウントダウンして出力し、0 で止まる(BR3 で 3 分岐)
+        LDI  5
+loop:   OUT
+        ADD  minus1
+        BR3  table
+        JMP  done        ; table-1: 負(ここには来ない)
+table:  JMP  done        ; 0
+        JMP  loop        ; 正
+done:   HALT
+
+minus1: .word -1

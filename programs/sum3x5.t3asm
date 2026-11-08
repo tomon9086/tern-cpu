@@ -1,0 +1,13 @@
+; 3 を 5 回足して 15 を作る(ループなし版: MOV/ADD/HALT だけ)
+        LDI  0
+        ADD  three
+        ADD  three
+        ADD  three
+        ADD  three
+        ADD  three
+        STA  result
+        OUT
+        HALT
+
+three:  .word 3
+result: .word 0
