@@ -1,0 +1,17 @@
+[package]
+name = "tern-emu"
+version = "0.1.0"
+edition = "2021"
+description = "Balanced ternary CPU emulator"
+
+[lib]
+name = "tern_emu"
+
+[[bin]]
+name = "t3run"
+path = "src/bin/t3run.rs"
+
+[dependencies]
+
+[profile.test]
+opt-level = 3

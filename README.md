@@ -8,50 +8,59 @@
 | マイルストーン | 内容 | 状態 |
 |---|---|---|
 | M0 | リポジトリ骨組み・平衡三進の仕様書 | 済 |
-| M1 | 数値表現ライブラリ(`emu/trit.py`) | 済 |
-| M2 | ISA レベルエミュレータ・アセンブラ(`emu/cpu.py`, `emu/asm.py`) | 済(ISA v0) |
+| M1 | 数値表現ライブラリ(`emu/src/trit.rs`) | 済 |
+| M2 | ISA レベルエミュレータ・アセンブラ(`emu/src/cpu.rs`, `emu/src/asm.rs`) | 済(ISA v0) |
 | M3 | ゲートレベルエミュレータ・トランジスタ数集計 | 未着手 |
 | M4〜 | SPICE / ブレッドボード / 実機 | 未着手 |
 
-## テスト
+## ビルドとテスト
 
-依存なし(Python 3.10 以上、標準ライブラリのみ)。
-
-```bash
-python3 -m unittest discover -s tests -t .
-```
-
-## 使い方(M1)
-
-```python
-from emu.trit import Word
-
-a = Word.from_int(8, 3)     # Word('+0-' = 8)
-b = Word.parse("+-0")        # 9 - 3 = 6
-r, cout = a.add(b)           # 14 は 3 トリットに収まらない → r = -13, cout = +1
-print(-a, a.sign(), a.shl(1))
-```
-
-## プログラムの実行(M2)
-
-ISA の仕様は [`docs/isa.md`](docs/isa.md)。
+エミュレータは Rust(標準ライブラリのみ、外部クレートなし)。言語選定の経緯は ADR 0001 / 0004。
 
 ```bash
-python3 -m emu.run programs/multiply.t3asm
+cd emu
 ```
 
 ```bash
-python3 -m emu.run programs/countdown.t3asm --trace
+cargo test
+```
+
+9 トリット加算の全網羅テスト(約 3.9 億通り、4 コアで約 9 秒)は重いので通常は除外している:
+
+```bash
+cargo test --release -- --ignored
+```
+
+## プログラムの実行
+
+ISA の仕様は [`docs/isa.md`](docs/isa.md)。`emu/` で:
+
+```bash
+cargo run --bin t3run -- ../programs/multiply.t3asm
+```
+
+```bash
+cargo run --bin t3run -- ../programs/countdown.t3asm --trace
 ```
 
 `--list` でアセンブル結果(アドレス・命令語・逆アセンブル)を表示する。
+
+## ライブラリの使い方
+
+```rust
+use tern_emu::{Trit, Word3};
+
+let a = Word3::from_i64(8).unwrap();       // +0-
+let b = Word3::parse("+-0").unwrap();      // 9 - 3 = 6
+let (r, cout) = a.add_carry(b, Trit::Z);  // 14 は収まらない → r = --- (-13), cout = +
+println!("{} {:?} {}", -a, a.sign(), a << 1);
+```
 
 ## ディレクトリ
 
 ```
 docs/        仕様(balanced-ternary.md, 今後 isa.md, gates.md)と設計判断(decisions/)
-emu/         エミュレータ(trit.py: M1 / cpu.py, asm.py, run.py: M2)
-tests/       テスト
+emu/         エミュレータ(Cargo パッケージ。src/: trit / cpu / asm / bin/t3run、tests/)
 programs/    サンプルプログラム(sum3x5, countdown, multiply)
 spice/       SPICE ネットリスト(M4〜)
 hardware/    KiCad プロジェクト(M5〜)
