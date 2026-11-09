@@ -19,6 +19,8 @@ pub enum Prim {
     Pti,
     /// 2 進比較用のインバータ(入力は - / + のみ)
     Bnot,
+    /// 3 値の出力段 ENC(p, n)(実験的、ADR 0007)。入力は 2 値、p と n の同時 + は禁止
+    Enc,
     Min(u8),
     Max(u8),
 }
@@ -69,6 +71,7 @@ impl Prim {
             Prim::Sti => Cost::new(2, 0, 3),
             Prim::Nti | Prim::Pti => Cost::new(1, 1, 2),
             Prim::Bnot => Cost::new(1, 0, 2),
+            Prim::Enc => Cost::new(2, 0, 3),
             Prim::Min(n) | Prim::Max(n) => Cost::new(0, n as u32, 1),
         }
     }
@@ -84,6 +87,7 @@ impl Prim {
             Prim::Nti => "NTI",
             Prim::Pti => "PTI",
             Prim::Bnot => "BNOT",
+            Prim::Enc => "ENC",
             Prim::Min(_) => "MIN",
             Prim::Max(_) => "MAX",
         }
@@ -97,6 +101,21 @@ impl Prim {
             Prim::Bnot => {
                 debug_assert_ne!(ins[0], Trit::Z, "BNOT input must be binary");
                 ins[0].sti()
+            }
+            Prim::Enc => {
+                let (p, n) = (ins[0], ins[1]);
+                debug_assert!(p != Trit::Z && n != Trit::Z, "ENC inputs must be binary");
+                assert!(
+                    !(p == Trit::P && n == Trit::P),
+                    "ENC short circuit: p and n both on"
+                );
+                if p == Trit::P {
+                    Trit::P
+                } else if n == Trit::P {
+                    Trit::N
+                } else {
+                    Trit::Z
+                }
             }
             Prim::Min(_) => *ins.iter().min().expect("MIN needs inputs"),
             Prim::Max(_) => *ins.iter().max().expect("MAX needs inputs"),
@@ -178,6 +197,7 @@ impl Circuit {
     pub fn gate(&mut self, prim: Prim, inputs: &[Net]) -> Net {
         let arity = match prim {
             Prim::Min(n) | Prim::Max(n) => n as usize,
+            Prim::Enc => 2,
             _ => 1,
         };
         assert_eq!(
@@ -212,6 +232,9 @@ impl Circuit {
     }
     pub fn bnot(&mut self, x: Net) -> Net {
         self.gate(Prim::Bnot, &[x])
+    }
+    pub fn enc(&mut self, p: Net, n: Net) -> Net {
+        self.gate(Prim::Enc, &[p, n])
     }
     pub fn min(&mut self, xs: &[Net]) -> Net {
         self.gate(Prim::Min(xs.len() as u8), xs)
@@ -366,10 +389,12 @@ impl Circuit {
             .iter()
             .filter(|&&m| m != 0 && m & 0b010 == 0)
             .count();
+        let ternary = gate_nets.iter().filter(|&&m| m == 0b111).count();
         Observation {
             vectors: count,
             gate_nets: gate_nets.len(),
             binary_nets: binary,
+            ternary_nets: ternary,
         }
     }
 }
@@ -382,6 +407,8 @@ pub struct Observation {
     pub gate_nets: usize,
     /// 一度も 0 をとらなかった配線数
     pub binary_nets: usize,
+    /// -, 0, + のすべてをとった配線数
+    pub ternary_nets: usize,
 }
 
 impl Observation {
@@ -431,6 +458,38 @@ pub fn sum(c: &mut Circuit, a: Decoded, b: Decoded) -> Net {
     })
 }
 
+/// 和の 2 値 3 本(結果が -, 0, + の各行の OR)。`with_zero` が偽なら z は作らない(z = p を返す)
+pub fn sum_terms(c: &mut Circuit, a: Decoded, b: Decoded, with_zero: bool) -> Decoded {
+    c.block("SUM", |c| {
+        let p = [c.min(&[a.n, b.n]), c.min(&[a.z, b.p]), c.min(&[a.p, b.z])];
+        let n = [c.min(&[a.n, b.z]), c.min(&[a.z, b.n]), c.min(&[a.p, b.p])];
+        let p = c.max(&p);
+        let n = c.max(&n);
+        let z = if with_zero {
+            let t = [c.min(&[a.n, b.p]), c.min(&[a.z, b.z]), c.min(&[a.p, b.n])];
+            c.max(&t)
+        } else {
+            p
+        };
+        Decoded { n, z, p }
+    })
+}
+
+/// 2 値 3 本から 3 値をダイオードで作る: MAX(p, MIN(z, 0))
+pub fn from_decoded(c: &mut Circuit, d: Decoded) -> Net {
+    c.block("SUM", |c| {
+        let zero = c.konst(Trit::Z);
+        let z0 = c.min(&[d.z, zero]);
+        c.max(&[d.p, z0])
+    })
+}
+
+/// 出力段付きの SUM(docs/gates.md 3.2b)
+pub fn sum_enc(c: &mut Circuit, a: Decoded, b: Decoded) -> Net {
+    let t = sum_terms(c, a, b, false);
+    c.block("SUM", |c| c.enc(t.p, t.n))
+}
+
 /// 一致: a = b なら a、そうでなければ 0
 pub fn cons(c: &mut Circuit, a: Net, b: Net) -> Net {
     c.block("CONS", |c| {
@@ -458,6 +517,21 @@ pub fn any(c: &mut Circuit, a: Net, b: Net) -> Net {
     })
 }
 
+/// 出力段付きの ANY(docs/gates.md 3.4)
+pub fn any_enc(c: &mut Circuit, a: Net, b: Net) -> Net {
+    c.block("ANY", |c| {
+        let hi = c.max(&[a, b]);
+        let lo = c.min(&[a, b]);
+        let lo_is_n = c.nti(lo);
+        let lo_not_n = c.nti(lo_is_n);
+        let hi_not_p = c.pti(hi);
+        let hi_is_p = c.pti(hi_not_p);
+        let p = c.min(&[hi_is_p, lo_not_n]);
+        let n = c.min(&[lo_is_n, hi_not_p]);
+        c.enc(p, n)
+    })
+}
+
 /// 3 値のレベル再生
 pub fn buf(c: &mut Circuit, x: Net) -> Net {
     c.block("BUF", |c| {
@@ -475,19 +549,83 @@ pub fn half_adder(c: &mut Circuit, a: Net, b: Net) -> (Net, Net) {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AdderOptions {
-    /// 段の出力(3 進: s1, s, cout / 2 進: s, cout)にレベル再生を入れる
+    /// 段の出力(3 進: s1, s, cout / 2 進: s, cout)にレベル再生を入れる。`enc` のときは無視
     pub restore: bool,
+    /// 改善候補 1: s1 の 2 値 3 本を 2 段目にそのまま渡し、DEC(s1) を省く(3 進のみ)
+    pub reuse_s1: bool,
+    /// 改善候補 3: SUM と ANY を ENC 版にする(3 進のみ)
+    pub enc: bool,
 }
 
-/// 3 進 全加算器 → (sum, cout)
+impl AdderOptions {
+    pub const BASE: AdderOptions = AdderOptions {
+        restore: false,
+        reuse_s1: false,
+        enc: false,
+    };
+
+    /// 表示用の名前
+    pub fn label(self) -> String {
+        let mut v = Vec::new();
+        if self.reuse_s1 {
+            v.push("s1再利用");
+        }
+        if self.enc {
+            v.push("ENC");
+        } else if self.restore {
+            v.push("再生あり");
+        }
+        if v.is_empty() {
+            "素直".to_string()
+        } else {
+            v.join("+")
+        }
+    }
+}
+
+/// 3 進 全加算器 → (sum, cout)。構成は docs/gates.md 4.1
 pub fn full_adder(c: &mut Circuit, a: Net, b: Net, cin: Net, opt: AdderOptions) -> (Net, Net) {
-    let (mut s1, c1) = half_adder(c, a, b);
-    if opt.restore {
+    let restore = opt.restore && !opt.enc;
+    let da = decode(c, a);
+    let db = decode(c, b);
+
+    // 1 段目: s1(3 値)と、必要なら s1 の 2 値 3 本
+    let (mut s1, ds1) = if opt.reuse_s1 {
+        let t = sum_terms(c, da, db, true);
+        let s1 = if opt.enc {
+            c.block("SUM", |c| c.enc(t.p, t.n))
+        } else {
+            from_decoded(c, t)
+        };
+        (s1, Some(t))
+    } else if opt.enc {
+        (sum_enc(c, da, db), None)
+    } else {
+        (sum(c, da, db), None)
+    };
+    if restore {
         s1 = buf(c, s1);
     }
-    let (mut s, c2) = half_adder(c, s1, cin);
-    let mut cout = any(c, c1, c2);
-    if opt.restore {
+    let c1 = cons(c, a, b);
+
+    // 2 段目
+    let ds1 = match ds1 {
+        Some(d) => d,
+        None => decode(c, s1),
+    };
+    let dcin = decode(c, cin);
+    let mut s = if opt.enc {
+        sum_enc(c, ds1, dcin)
+    } else {
+        sum(c, ds1, dcin)
+    };
+    let c2 = cons(c, s1, cin);
+    let mut cout = if opt.enc {
+        any_enc(c, c1, c2)
+    } else {
+        any(c, c1, c2)
+    };
+    if restore {
         s = buf(c, s);
         cout = buf(c, cout);
     }

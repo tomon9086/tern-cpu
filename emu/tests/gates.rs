@@ -4,16 +4,28 @@
 use tern_emu::asm::assemble;
 use tern_emu::cpu::Cpu;
 use tern_emu::gates::{
-    any, binary_ripple_adder, buf, cons, decode, eval_adder, full_adder, ripple_adder, sum,
-    AdderOptions, Circuit, Cost, GateAlu, Prim,
+    any, any_enc, binary_ripple_adder, buf, cons, decode, eval_adder, full_adder, ripple_adder,
+    sum, sum_enc, AdderOptions, Circuit, Cost, GateAlu, Prim,
 };
 use tern_emu::{Trit, Word, Word9};
 
 const T: [Trit; 3] = Trit::ALL;
-const OPTS: [AdderOptions; 2] = [
-    AdderOptions { restore: false },
-    AdderOptions { restore: true },
-];
+/// 3 進加算器の全構成(restore / reuse_s1 / enc の 8 通り)
+const OPTS: [AdderOptions; 8] = {
+    let mut v = [AdderOptions::BASE; 8];
+    let mut i = 0;
+    while i < 8 {
+        v[i] = AdderOptions {
+            restore: i & 1 != 0,
+            reuse_s1: i & 2 != 0,
+            enc: i & 4 != 0,
+        };
+        i += 1;
+    }
+    v
+};
+/// 2 進加算器の構成(restore の有無)
+const BIN_OPTS: [AdderOptions; 2] = [OPTS[0], OPTS[1]];
 
 /// 2 入力の複合ゲートを 1 つだけ持つ回路を作り、9 通りの真理値表を返す。
 fn table2(
@@ -86,6 +98,37 @@ fn sum_gate() {
 }
 
 #[test]
+fn sum_enc_gate() {
+    let got = table2(|c, a, b| {
+        let (da, db) = (decode(c, a), decode(c, b));
+        sum_enc(c, da, db)
+    });
+    assert_eq!(got, expected2(|a, b| (a + b + 4) % 3 - 1));
+}
+
+#[test]
+fn enc_truth_table() {
+    use Trit::{N, P, Z};
+    let mut c = Circuit::new();
+    let (p, n) = (c.input("p"), c.input("n"));
+    let y = c.enc(p, n);
+    c.output("y", y);
+    assert_eq!(c.run(&[N, N]), [Z]);
+    assert_eq!(c.run(&[P, N]), [P]);
+    assert_eq!(c.run(&[N, P]), [N]);
+}
+
+#[test]
+#[should_panic(expected = "short circuit")]
+fn enc_detects_short() {
+    let mut c = Circuit::new();
+    let (p, n) = (c.input("p"), c.input("n"));
+    let y = c.enc(p, n);
+    c.output("y", y);
+    c.run(&[Trit::P, Trit::P]);
+}
+
+#[test]
 fn cons_gate() {
     assert_eq!(table2(cons), expected2(|a, b| if a == b { a } else { 0 }));
 }
@@ -102,6 +145,20 @@ fn any_gate() {
         }
     };
     assert_eq!(table2(any), expected2(f));
+}
+
+#[test]
+fn any_enc_gate() {
+    let f = |a: i8, b: i8| {
+        if a == 0 {
+            b
+        } else if b == 0 || a == b {
+            a
+        } else {
+            0
+        }
+    };
+    assert_eq!(table2(any_enc), expected2(f));
 }
 
 #[test]
@@ -170,7 +227,20 @@ fn ripple_adder_exhaustive_1_to_4_trits() {
 /// 729 x 729 x 3 ≈ 160 万通り
 #[test]
 fn ripple_adder_exhaustive_6_trits() {
-    adder_exhaustive::<6>(AdderOptions { restore: true });
+    adder_exhaustive::<6>(AdderOptions {
+        restore: true,
+        ..AdderOptions::BASE
+    });
+}
+
+/// s1再利用 + ENC の構成も 6 トリットで全網羅
+#[test]
+fn ripple_adder_exhaustive_6_trits_reuse_enc() {
+    adder_exhaustive::<6>(AdderOptions {
+        reuse_s1: true,
+        enc: true,
+        ..AdderOptions::BASE
+    });
 }
 
 /// 19683² ≈ 3.9 億通り。重いので通常は除外: cargo test --release -- --ignored
@@ -182,7 +252,13 @@ fn ripple_adder_exhaustive_9_trits() {
     std::thread::scope(|s| {
         for k in 0..threads {
             s.spawn(move || {
-                let c = ripple_adder(9, AdderOptions { restore: true });
+                let c = ripple_adder(
+                    9,
+                    AdderOptions {
+                        restore: true,
+                        ..AdderOptions::BASE
+                    },
+                );
                 let mut vals = Vec::new();
                 let mut x = -h + k;
                 while x <= h {
@@ -244,7 +320,7 @@ fn binary_check(n: usize, opt: AdderOptions, pairs: impl Iterator<Item = (u64, u
 
 #[test]
 fn binary_adder() {
-    for opt in OPTS {
+    for opt in BIN_OPTS {
         binary_check(
             4,
             opt,
@@ -268,15 +344,13 @@ fn binary_adder() {
 
 #[test]
 fn cost_model_and_breakdown() {
-    let c = ripple_adder(1, AdderOptions { restore: false });
+    let c = ripple_adder(1, AdderOptions::BASE);
     let by_block = c.cost_by_block();
     // デコーダ 4 個(a, b, s1, cin)× トランジスタ 4
     assert_eq!(by_block["DEC"].1.transistors, 16);
     assert_eq!(by_block["ANY"].1.transistors, 4);
     assert_eq!(by_block["SUM"].1.transistors, 0);
-    let total = by_block
-        .values()
-        .fold(Cost::default(), |a, (_, k)| a + *k);
+    let total = by_block.values().fold(Cost::default(), |a, (_, k)| a + *k);
     assert_eq!(total, c.cost());
     assert_eq!(
         ripple_adder(9, AdderOptions::default()).cost().transistors,
@@ -286,8 +360,11 @@ fn cost_model_and_breakdown() {
 
 #[test]
 fn restore_bounds_passive_depth() {
-    let on = AdderOptions { restore: true };
-    let off = AdderOptions { restore: false };
+    let on = AdderOptions {
+        restore: true,
+        ..AdderOptions::BASE
+    };
+    let off = AdderOptions::BASE;
     // レベル再生ありなら段数を増やしても受動段数は一定
     assert_eq!(
         ripple_adder(3, on).passive_depth(),
@@ -298,6 +375,26 @@ fn restore_bounds_passive_depth() {
     assert!(
         binary_ripple_adder(15, off).passive_depth() > binary_ripple_adder(3, off).passive_depth()
     );
+}
+
+#[test]
+fn variant_properties() {
+    let base = AdderOptions::BASE;
+    let reuse = AdderOptions {
+        reuse_s1: true,
+        ..base
+    };
+    let enc = AdderOptions { enc: true, ..base };
+    let t = |o| ripple_adder(1, o).cost().transistors;
+    // s1 再利用で DEC(s1) の 4 個が減る
+    assert_eq!(t(base) - t(reuse), 4);
+    // ENC 版は出力が能動駆動なので、段数を増やしても受動段数は一定
+    assert_eq!(
+        ripple_adder(3, enc).passive_depth(),
+        ripple_adder(9, enc).passive_depth()
+    );
+    // s1 再利用は DEC のレベル再生がなくなる分、受動段数が伸びる
+    assert!(ripple_adder(1, reuse).passive_depth() >= ripple_adder(1, base).passive_depth());
 }
 
 #[test]

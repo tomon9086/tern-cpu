@@ -25,121 +25,107 @@ fn exhaustive(n: usize, alphabet: &[Trit]) -> Vec<Vec<Trit>> {
     out
 }
 
-/// 決定的な疑似乱数による入力ベクタ
-fn sampled(n: usize, alphabet: &[Trit], count: usize) -> Vec<Vec<Trit>> {
-    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
-    (0..count)
-        .map(|_| {
-            (0..n)
-                .map(|_| {
-                    x ^= x << 13;
-                    x ^= x >> 7;
-                    x ^= x << 17;
-                    alphabet[(x % alphabet.len() as u64) as usize]
-                })
-                .collect()
-        })
-        .collect()
-}
-
-fn cell(f: impl Fn(&mut Circuit, Net, Net, Net)) -> Circuit {
+/// 1 桁分の回路(入力 a, b, cin / 出力 s, cout)
+fn cell(f: impl Fn(&mut Circuit, Net, Net, Net) -> (Net, Net)) -> Circuit {
     let mut c = Circuit::new();
     let a = c.input("a");
     let b = c.input("b");
     let cin = c.input("cin");
-    f(&mut c, a, b, cin);
+    let (s, co) = f(&mut c, a, b, cin);
+    c.output("s", s);
+    c.output("cout", co);
     c
 }
 
 struct Row {
     name: String,
-    c: Circuit,
-    vectors: Vec<Vec<Trit>>,
-    vectors_note: &'static str,
+    /// 1 桁分(2 値信号線の割合を全網羅で測る)
+    cell: Circuit,
+    alphabet: &'static [Trit],
+    /// 比較用のワード幅の加算器
+    word: Circuit,
 }
 
 fn main() {
     let breakdown = std::env::args().any(|a| a == "--breakdown");
-    let tern = &Trit::ALL[..];
-    let bin = &[Trit::N, Trit::P][..];
-    let mut rows = Vec::new();
+    const TERN: &[Trit] = &Trit::ALL;
+    const BIN: &[Trit] = &[Trit::N, Trit::P];
 
+    let o = |restore, reuse_s1, enc| AdderOptions {
+        restore,
+        reuse_s1,
+        enc,
+    };
+    let ternary = [
+        o(false, false, false),
+        o(true, false, false),
+        o(false, true, false),
+        o(true, true, false),
+        o(false, false, true),
+        o(false, true, true),
+    ];
+
+    let mut rows = Vec::new();
+    for opt in ternary {
+        rows.push(Row {
+            name: format!("3進 9トリット ({})", opt.label()),
+            cell: cell(|c, a, b, ci| full_adder(c, a, b, ci, opt)),
+            alphabet: TERN,
+            word: ripple_adder(9, opt),
+        });
+    }
     for restore in [false, true] {
-        let opt = AdderOptions { restore };
-        let tag = if restore {
-            "再生あり"
-        } else {
-            "再生なし"
-        };
-        let fa = cell(|c, a, b, cin| {
-            let (s, co) = full_adder(c, a, b, cin, opt);
-            c.output("s", s);
-            c.output("cout", co);
-        });
+        let opt = o(restore, false, false);
         rows.push(Row {
-            name: format!("3進 全加算器 ({tag})"),
-            c: fa,
-            vectors: exhaustive(3, tern),
-            vectors_note: "全網羅",
-        });
-        let bfa = cell(|c, a, b, cin| {
-            let (s, co) = binary_full_adder(c, a, b, cin, opt);
-            c.output("s", s);
-            c.output("cout", co);
-        });
-        rows.push(Row {
-            name: format!("2進 全加算器 ({tag})"),
-            c: bfa,
-            vectors: exhaustive(3, bin),
-            vectors_note: "全網羅",
-        });
-        rows.push(Row {
-            name: format!("3進 9トリット ({tag})"),
-            c: ripple_adder(9, opt),
-            vectors: sampled(19, tern, 20_000),
-            vectors_note: "2万件",
-        });
-        rows.push(Row {
-            name: format!("2進 15ビット ({tag})"),
-            c: binary_ripple_adder(15, opt),
-            vectors: sampled(31, bin, 20_000),
-            vectors_note: "2万件",
+            name: format!("2進 15ビット ({})", opt.label()),
+            cell: cell(|c, a, b, ci| binary_full_adder(c, a, b, ci, opt)),
+            alphabet: BIN,
+            word: binary_ripple_adder(15, opt),
         });
     }
 
-    println!("| 回路 | トランジスタ | ダイオード | 抵抗 | 部品計 | 受動段数 | ゲート段数 | 能動段数 | 2値信号線 |");
-    println!("|---|---:|---:|---:|---:|---:|---:|---:|---:|");
+    println!("加算器全体(3進 9トリット / 2進 15ビット)。2値信号線(0 を一度もとらない配線の割合)と 3値配線(-,0,+ すべてをとる配線の数)は 1 桁分を全網羅で測定\n");
+    println!("| 構成 | トランジスタ | ダイオード | 抵抗 | 部品計 | 受動段数 | ゲート段数 | 能動段数 | 2値信号線 | 3値配線/桁 |");
+    println!("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
     for r in &rows {
-        let k = r.c.cost();
-        let o = r.c.observe(r.vectors.iter().map(|v| v.as_slice()));
+        let k = r.word.cost();
+        let vecs = exhaustive(3, r.alphabet);
+        let obs = r.cell.observe(vecs.iter().map(|v| v.as_slice()));
         println!(
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {:.0}% ({}/{}, {}) |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {:.0}% | {}/{} |",
             r.name,
             k.transistors,
             k.diodes,
             k.resistors,
             k.total(),
-            r.c.passive_depth(),
-            r.c.gate_levels(),
-            r.c.active_levels(),
-            o.binary_ratio() * 100.0,
-            o.binary_nets,
-            o.gate_nets,
-            r.vectors_note,
+            r.word.passive_depth(),
+            r.word.gate_levels(),
+            r.word.active_levels(),
+            obs.binary_ratio() * 100.0,
+            obs.ternary_nets,
+            obs.gate_nets,
         );
     }
 
     if breakdown {
-        for r in rows.iter().filter(|r| r.name.contains("全加算器")) {
-            println!("\n### {}\n", r.name);
+        for r in &rows {
+            println!("\n### 1 桁の内訳: {}\n", r.name);
             println!("| 部品 | ゲート数 | トランジスタ | ダイオード | 抵抗 |");
             println!("|---|---:|---:|---:|---:|");
-            for (block, (n, k)) in r.c.cost_by_block() {
+            for (block, (n, k)) in r.cell.cost_by_block() {
                 println!(
                     "| {block} | {n} | {} | {} | {} |",
                     k.transistors, k.diodes, k.resistors
                 );
             }
+            let k = r.cell.cost();
+            println!(
+                "| 計 | {} | {} | {} | {} |",
+                r.cell.num_gates(),
+                k.transistors,
+                k.diodes,
+                k.resistors
+            );
         }
     }
 }
