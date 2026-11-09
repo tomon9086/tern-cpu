@@ -11,6 +11,10 @@ name = "tern_emu"
 name = "t3run"
 path = "src/bin/t3run.rs"
 
+[[bin]]
+name = "gatestat"
+path = "src/bin/gatestat.rs"
+
 [dependencies]
 
 [profile.test]
