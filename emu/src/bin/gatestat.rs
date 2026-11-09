@@ -68,7 +68,15 @@ fn main() {
     let mut rows = Vec::new();
     for opt in ternary {
         rows.push(Row {
-            name: format!("3進 9トリット ({})", opt.label()),
+            name: format!(
+                "3進 9トリット ({}){}",
+                opt.label(),
+                if opt == AdderOptions::STANDARD {
+                    " ★標準"
+                } else {
+                    ""
+                }
+            ),
             cell: cell(|c, a, b, ci| full_adder(c, a, b, ci, opt)),
             alphabet: TERN,
             word: ripple_adder(9, opt),

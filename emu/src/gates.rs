@@ -558,6 +558,14 @@ pub struct AdderOptions {
 }
 
 impl AdderOptions {
+    /// 標準構成: ENC 版(ADR 0007, 0008)
+    pub const STANDARD: AdderOptions = AdderOptions {
+        restore: false,
+        reuse_s1: false,
+        enc: true,
+    };
+
+    /// 最も素直な構成(比較用)
     pub const BASE: AdderOptions = AdderOptions {
         restore: false,
         reuse_s1: false,
@@ -726,6 +734,13 @@ pub fn eval_adder<const N: usize>(
 pub struct GateAlu {
     circuit: Circuit,
     vals: Vec<Trit>,
+}
+
+impl Default for GateAlu {
+    /// 標準構成(`AdderOptions::STANDARD`)の 9 トリット加算器
+    fn default() -> Self {
+        GateAlu::new(AdderOptions::STANDARD)
+    }
 }
 
 impl GateAlu {
