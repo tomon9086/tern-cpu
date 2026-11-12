@@ -220,6 +220,14 @@ fn sample_countdown() {
 }
 
 #[test]
+fn sample_fibonacci() {
+    assert_eq!(
+        outputs(&run_file("fibonacci.t3asm")),
+        [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377]
+    );
+}
+
+#[test]
 fn sample_multiply_all_signs() {
     let src = std::fs::read_to_string(programs_dir().join("multiply.t3asm")).unwrap();
     assert!(src.contains("a:      .word 7") && src.contains("b:      .word -12"));

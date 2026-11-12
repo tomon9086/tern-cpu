@@ -429,7 +429,12 @@ fn binary_net_observation() {
 #[test]
 fn gate_alu_runs_sample_programs() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../programs");
-    for name in ["sum3x5.t3asm", "countdown.t3asm", "multiply.t3asm"] {
+    for name in [
+        "sum3x5.t3asm",
+        "countdown.t3asm",
+        "multiply.t3asm",
+        "fibonacci.t3asm",
+    ] {
         let prog = assemble(&std::fs::read_to_string(dir.join(name)).unwrap()).unwrap();
         let mut soft = Cpu::new();
         soft.load(prog.image.clone());

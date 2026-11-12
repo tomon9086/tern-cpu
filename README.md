@@ -44,6 +44,25 @@ cargo run --bin t3run -- ../programs/countdown.t3asm --trace
 ```
 
 `--list` でアセンブル結果(アドレス・命令語・逆アセンブル)を表示する。
+`--alu gate` を付けると、ADD をゲートレベルの 9 トリット加算器(M3 の標準構成)で計算する。
+
+### プログラムを書く
+
+`programs/` に `.t3asm` ファイルを置いて実行する。命令と文法は [`docs/isa.md`](docs/isa.md)。
+
+```
+; 10 + (-3) を出力する
+        LDA  x
+        ADD  y
+        OUT
+        HALT
+x:      .word 10
+y:      .word -3     ; 三進リテラルなら 0t-0(= -3)
+```
+
+- 命令: `HALT` `LDA a` `STA a` `LDI n` `ADD a` `NEG` `JMP a` `BR3 a` `OUT`
+- 条件分岐は `BR3 a`(ACC が負なら a-1、0 なら a、正なら a+1 へ)。分岐表の書き方は `countdown.t3asm` を参照
+- サンプル: `sum3x5`(15)、`countdown`(5〜1)、`multiply`(7 × -12)、`fibonacci`(15 項)
 
 ゲートレベル回路の部品数・段数の集計:
 
@@ -67,7 +86,7 @@ println!("{} {:?} {}", -a, a.sign(), a << 1);
 ```
 docs/        仕様(balanced-ternary.md, isa.md, gates.md, glossary.md)と設計判断(decisions/)
 emu/         エミュレータ(Cargo パッケージ。src/: trit / cpu / asm / gates / bin/{t3run,gatestat}、tests/)
-programs/    サンプルプログラム(sum3x5, countdown, multiply)
+programs/    サンプルプログラム(sum3x5, countdown, multiply, fibonacci)
 spice/       SPICE ネットリスト(M4〜)
 hardware/    KiCad プロジェクト(M5〜)
 ```

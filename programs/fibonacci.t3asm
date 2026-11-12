@@ -1,0 +1,26 @@
+; フィボナッチ数列を n 項出力する(0 1 1 2 3 5 8 ...)
+;   a, b = 0, 1
+;   n 回: OUT a; a, b = b, a + b
+        LDA  n
+loop:   BR3  table       ; n の符号で分岐
+        JMP  done        ; n < 0(ここには来ない)
+table:  JMP  done        ; n = 0 なら終了
+        LDA  a           ; n > 0
+        OUT
+        ADD  b           ; ACC = a + b
+        STA  t
+        LDA  b
+        STA  a           ; a = b
+        LDA  t
+        STA  b           ; b = a + b
+        LDA  n
+        ADD  minus1
+        STA  n           ; n -= 1
+        JMP  loop
+done:   HALT
+
+n:      .word 15
+a:      .word 0
+b:      .word 1
+t:      .word 0
+minus1: .word -1

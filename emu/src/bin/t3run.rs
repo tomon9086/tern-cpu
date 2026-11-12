@@ -1,23 +1,36 @@
-//! コマンドライン実行: `t3run programs/sum3x5.t3asm [--trace] [--list] [--max-steps N]`
+//! コマンドライン実行: `t3run programs/sum3x5.t3asm [--trace] [--list] [--alu soft|gate] [--max-steps N]`
+//!
+//! `--alu gate` で ADD をゲートレベルの 9 トリット加算器(標準構成)で計算する。
 
 use std::process::ExitCode;
 
 use tern_emu::asm::assemble;
-use tern_emu::cpu::{disassemble, Cpu};
+use tern_emu::cpu::{disassemble, Alu, Cpu, SoftAlu};
+use tern_emu::gates::GateAlu;
 
-const USAGE: &str = "usage: t3run <source.t3asm> [--trace] [--list] [--max-steps N]";
+const USAGE: &str =
+    "usage: t3run <source.t3asm> [--trace] [--list] [--alu soft|gate] [--max-steps N]";
 
 fn main() -> ExitCode {
     let mut source = None;
     let mut trace = false;
     let mut list = false;
     let mut max_steps: u64 = 100_000;
+    let mut gate = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--trace" => trace = true,
             "--list" => list = true,
+            "--alu" => match args.next().as_deref() {
+                Some("soft") => gate = false,
+                Some("gate") => gate = true,
+                _ => {
+                    eprintln!("--alu needs soft or gate\n{USAGE}");
+                    return ExitCode::from(64);
+                }
+            },
             "--max-steps" => match args.next().and_then(|s| s.parse().ok()) {
                 Some(n) => max_steps = n,
                 None => {
@@ -75,8 +88,27 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut cpu = Cpu::new();
-    cpu.load(prog.image);
+    let image = prog.image;
+    if gate {
+        let alu = GateAlu::default();
+        println!(
+            "ALU: gate-level ({} gates, {} transistors)",
+            alu.circuit().num_gates(),
+            alu.circuit().cost().transistors
+        );
+        execute(Cpu::with_alu(alu), image, trace, max_steps)
+    } else {
+        execute(Cpu::with_alu(SoftAlu), image, trace, max_steps)
+    }
+}
+
+fn execute<A: Alu>(
+    mut cpu: Cpu<A>,
+    image: impl IntoIterator<Item = (i16, tern_emu::Word9)>,
+    trace: bool,
+    max_steps: u64,
+) -> ExitCode {
+    cpu.load(image);
     let result = if trace {
         cpu.run_traced(max_steps, |c, pc, w| println!("{}", c.format_trace(pc, w)))
     } else {
