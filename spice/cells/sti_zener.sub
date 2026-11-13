@@ -1,0 +1,14 @@
+* STI(ツェナー方式)
+* しきい値 = ±(5V - Vbe - Vz) ≈ ±(5 - 0.7 - 6.8) = ∓2.5V
+* Vbe の変化はしきい値に 1 倍で伝わる。ON 時のベース電流が大きく、R0 を小さくできる
+.subckt STI_ZENER in out vp vn
+R1 vp bp 10k
+DZ1 mp bp DZ6V8
+R2 mp in 4.7k
+Q1 out bp vp 2N3906
+R3 vn bn 10k
+DZ2 bn mn DZ6V8
+R4 in mn 4.7k
+Q2 out bn vn 2N3904
+R0 out 0 3.3k
+.ends

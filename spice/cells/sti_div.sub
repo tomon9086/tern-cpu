@@ -1,0 +1,13 @@
+* STI(抵抗分圧方式)
+* 上スイッチ PNP: 入力が約 -2.5V より低いと ON(出力 +5V へ)
+* 下スイッチ NPN: 入力が約 +2.5V より高いと ON(出力 -5V へ)
+* しきい値は分圧比で決まる。Vbe の変化が 1/分圧比(約 11 倍)に拡大される
+.subckt STI_DIV in out vp vn
+R1 vp bp 8.2k
+R2 bp in 82k
+Q1 out bp vp 2N3906
+R3 vn bn 8.2k
+R4 bn in 86.6k
+Q2 out bn vn 2N3904
+R0 out 0 10k
+.ends

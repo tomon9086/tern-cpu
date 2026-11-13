@@ -11,7 +11,8 @@
 | M1 | 数値表現ライブラリ(`emu/src/trit.rs`) | 済 |
 | M2 | ISA レベルエミュレータ・アセンブラ(`emu/src/cpu.rs`, `emu/src/asm.rs`) | 済(ISA v0) |
 | M3 | ゲートレベルエミュレータ・部品数集計(`emu/src/gates.rs`) | 初版済(結果は [`docs/gates.md`](docs/gates.md) 6 章) |
-| M4〜 | SPICE / ブレッドボード / 実機 | 未着手 |
+| M4 | SPICE による回路検証(`spice/`) | 着手(STI の 2 方式を比較、[`docs/spice.md`](docs/spice.md)) |
+| M5〜 | ブレッドボード / 実機 | 未着手 |
 
 ## ビルドとテスト
 
@@ -87,6 +88,6 @@ println!("{} {:?} {}", -a, a.sign(), a << 1);
 docs/        仕様(balanced-ternary.md, isa.md, gates.md, glossary.md)と設計判断(decisions/)
 emu/         エミュレータ(Cargo パッケージ。src/: trit / cpu / asm / gates / bin/{t3run,gatestat}、tests/)
 programs/    サンプルプログラム(sum3x5, countdown, multiply, fibonacci)
-spice/       SPICE ネットリスト(M4〜)
+spice/       SPICE の部品モデル・ゲート回路・評価スクリプト(M4〜。python3 spice/sim.py)
 hardware/    KiCad プロジェクト(M5〜)
 ```

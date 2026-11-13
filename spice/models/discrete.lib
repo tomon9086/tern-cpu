@@ -1,0 +1,20 @@
+* 部品モデル(ADR 0009)
+* 2N3904 / 2N3906 / 1N4148 は、LTspice などに同梱され広く流通している標準的なモデル値。
+* メーカー(onsemi 等)の公開モデルとの照合は未実施(docs/spice.md 参照)。
+* hFE を振るため、BF に BFSCALE を掛けている。テストベンチ側で .param BFSCALE=... を定義すること。
+
+.model 2N3904 NPN(IS=6.734f XTI=3 EG=1.11 VAF=74.03 BF={416.4*BFSCALE} NE=1.259
++ ISE=6.734f IKF=66.78m XTB=1.5 BR=.7371 NC=2 ISC=0 IKR=0 RC=1 CJC=3.638p
++ MJC=.3085 VJC=.75 FC=.5 CJE=4.493p MJE=.2593 VJE=.75 TR=239.5n TF=301.2p
++ ITF=.4 VTF=4 XTF=2 RB=10)
+
+.model 2N3906 PNP(IS=1.41f XTI=3 EG=1.11 VAF=18.7 BF={180.7*BFSCALE} NE=1.5
++ ISE=0 IKF=80m XTB=1.5 BR=4.977 NC=2 ISC=0 IKR=0 RC=2.5 CJC=9.728p MJC=.5776
++ VJC=.75 FC=.5 CJE=8.063p MJE=.3677 VJE=.75 TR=33.42n TF=179.3p ITF=.4 VTF=4
++ XTF=6 RB=10)
+
+.model 1N4148 D(IS=2.52n RS=.568 N=1.752 CJO=4p M=.4 TT=20n BV=100 IBV=100u)
+
+* 6.8V ツェナー(BZX55C6V8 / SMD は BZT52C6V8 相当を想定)。
+* 降伏電圧・温度係数(約 +3mV/K)を合わせただけの近似モデル。メーカーモデルではない。
+.model DZ6V8 D(IS=1n RS=5 N=1.5 CJO=100p BV=6.8 IBV=5m NBV=1.5 TBV1=4.4e-4)
